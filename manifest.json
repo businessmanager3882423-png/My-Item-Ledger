@@ -1,0 +1,13 @@
+
+{
+  "id": "./",
+  "name": "My Item Ledger",
+  "short_name": "Item Ledger",
+  "description": "Private item lending and return tracker",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6fb",
+  "theme_color": "#12213a",
+  "orientation": "any"
+}
