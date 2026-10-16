@@ -3,146 +3,155 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#12213a">
-  <meta name="description" content="Private item lending and return tracker">
+  <meta name="description" content="Track shared items, lending, returns and history.">
   <title>My Item Ledger</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#"><span class="logo">M</span> My Item Ledger</a>
-    <div class="tools">
-      <span id="syncStatus">Starting...</span>
-      <button id="logoutBtn" class="btn light hidden" type="button">Logout</button>
+    <a class="brand" href="#" aria-label="My Item Ledger home">
+      <span class="logo">M</span>
+      <span>My Item Ledger</span>
+    </a>
+    <div class="top-actions">
+      <span id="syncStatus" class="sync-status">Connecting...</span>
+      <button id="logoutBtn" class="btn btn-light hidden" type="button">Log Out</button>
     </div>
   </header>
 
-  <main>
-    <section id="loginView" class="login panel">
-      <div class="hero">📦</div>
-      <h1>Your items, safely tracked.</h1>
-      <p>Record what you give, who has it, and when it returns.</p>
+  <main class="container">
+    <section id="loginView" class="login-wrap">
+      <div class="login-card panel">
+        <div class="hero-icon">📦</div>
+        <p class="eyebrow">SIMPLE. ORGANIZED. CONNECTED.</p>
+        <h1>Keep every item accounted for.</h1>
+        <p class="muted intro">Track who has your items, when they were given, and when they come back.</p>
 
-      <form id="loginForm" class="login-form">
-        <label for="loginEmail">Email address
+        <form id="loginForm" class="stack-form">
+          <label for="loginEmail">Email Address</label>
           <input id="loginEmail" name="email" type="email"
-            autocomplete="username" maxlength="254"
-            placeholder="Enter your assigned email" required>
-        </label>
+                 autocomplete="username" required placeholder="Enter your email">
 
-        <label for="loginPassword">Password
+          <label for="loginPassword">Password</label>
           <input id="loginPassword" name="password" type="password"
-            autocomplete="current-password" minlength="6"
-            placeholder="Enter your password" required>
-        </label>
+                 autocomplete="current-password" required placeholder="Enter your password">
 
-        <button id="loginBtn" class="btn primary full" type="submit">
-          Login
-        </button>
+          <button id="loginBtn" class="btn btn-primary full-width" type="submit">Sign In</button>
+          <button id="resetPasswordBtn" class="text-button" type="button">Forgot Password?</button>
+        </form>
 
-        <button id="resetPasswordBtn" class="link-btn" type="button">
-          Forgot password?
-        </button>
-      </form>
-
-      <p class="muted small">
-        Private access for the assigned email account.
-      </p>
-      <p id="loginError" class="error" aria-live="polite"></p>
+        <p id="loginError" class="message error" role="status" aria-live="polite"></p>
+        <p class="small muted login-foot">Use the shared account credentials provided by the account owner.</p>
+      </div>
     </section>
 
     <section id="appView" class="hidden">
-      <div class="welcome">
+      <div class="page-heading">
         <div>
-          <p class="eyebrow">YOUR PRIVATE WORKSPACE</p>
-          <h1>My Item Ledger</h1>
-          <p class="muted">Every handover. Every return. One history.</p>
+          <p class="eyebrow">SHARED WORKSPACE</p>
+          <h1>Item Dashboard</h1>
+          <p class="muted">Manage items, returns and records in one place.</p>
         </div>
-        <span id="connectionLabel" class="pill">Checking connection</span>
+        <span id="connectionLabel" class="connection-pill">Checking connection...</span>
       </div>
 
-      <div class="stats">
-        <article class="stat">
+      <section class="stats-grid" aria-label="Ledger statistics">
+        <article class="stat-card">
           <span>Currently Given</span>
           <strong id="activeCount">0</strong>
+          <small>Items awaiting return</small>
         </article>
-        <article class="stat">
+        <article class="stat-card">
           <span>Returned</span>
           <strong id="returnedCount">0</strong>
+          <small>Successfully returned</small>
         </article>
-        <article class="stat">
+        <article class="stat-card">
           <span>Total Records</span>
           <strong id="totalCount">0</strong>
+          <small>All saved records</small>
         </article>
-        <article class="stat">
+        <article class="stat-card">
           <span>Overdue</span>
           <strong id="overdueCount">0</strong>
+          <small>Past the expected date</small>
         </article>
-      </div>
+      </section>
 
-      <section class="panel">
-        <h2>Add New Record</h2>
+      <section class="panel section-panel">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">NEW ENTRY</p>
+            <h2>Add an Item Record</h2>
+          </div>
+        </div>
+
         <form id="itemForm">
           <div class="form-grid">
-            <label>Item name *
-              <input name="itemName" maxlength="100" required
-                placeholder="e.g. Laptop">
-            </label>
-            <label>Person's name *
-              <input name="personName" maxlength="100" required
-                placeholder="Who received it?">
-            </label>
-            <label>Quantity *
-              <input name="quantity" type="number" min="1" max="99999"
-                value="1" required>
-            </label>
-            <label>Date given *
-              <input name="givenDate" type="date" required>
-            </label>
-            <label>Expected return
-              <input name="dueDate" type="date">
-            </label>
-            <label>Notes
-              <input name="notes" maxlength="500"
-                placeholder="Optional details">
-            </label>
+            <div class="field">
+              <label for="itemName">Item Name <span>*</span></label>
+              <input id="itemName" name="itemName" maxlength="100" required placeholder="e.g. Laptop">
+            </div>
+            <div class="field">
+              <label for="personName">Given To <span>*</span></label>
+              <input id="personName" name="personName" maxlength="100" required placeholder="Person's name">
+            </div>
+            <div class="field">
+              <label for="quantity">Quantity <span>*</span></label>
+              <input id="quantity" name="quantity" type="number" min="1" max="99999" value="1" required>
+            </div>
+            <div class="field">
+              <label for="givenDate">Date Given <span>*</span></label>
+              <input id="givenDate" name="givenDate" type="date" required>
+            </div>
+            <div class="field">
+              <label for="dueDate">Expected Return Date</label>
+              <input id="dueDate" name="dueDate" type="date">
+            </div>
+            <div class="field">
+              <label for="notes">Notes</label>
+              <input id="notes" name="notes" maxlength="500" placeholder="Optional details">
+            </div>
           </div>
-          <button id="saveBtn" class="btn primary" type="submit">
-            Save Record
-          </button>
-          <p id="formMessage" class="small muted" aria-live="polite"></p>
+          <div class="form-footer">
+            <button id="saveBtn" class="btn btn-primary" type="submit">Save Record</button>
+            <p id="formMessage" class="message" role="status" aria-live="polite"></p>
+          </div>
         </form>
       </section>
 
-      <section class="panel">
-        <div class="section-head">
+      <section class="panel section-panel">
+        <div class="list-heading">
           <div>
+            <p class="eyebrow">ACTIVE ITEMS</p>
             <h2>Currently Given</h2>
-            <p class="muted small">Items not yet returned</p>
+            <p class="muted small">Items that have not been returned yet.</p>
           </div>
-          <input id="activeSearch" class="search"
-            placeholder="Search active items" aria-label="Search active items">
+          <input id="activeSearch" class="search-input" type="search" placeholder="Search active items..." aria-label="Search active items">
         </div>
-        <div id="activeList" class="record-list"></div>
+        <div id="activeList" class="record-list">
+          <p class="empty-state">Loading records...</p>
+        </div>
       </section>
 
-      <section class="panel">
-        <div class="section-head">
+      <section class="panel section-panel">
+        <div class="list-heading">
           <div>
-            <h2>Record History</h2>
-            <p class="muted small">Returned items remain saved</p>
+            <p class="eyebrow">PERMANENT RECORD</p>
+            <h2>Item History</h2>
+            <p class="muted small">Returned items remain in your history.</p>
           </div>
-          <input id="historySearch" class="search"
-            placeholder="Search history" aria-label="Search history">
+          <input id="historySearch" class="search-input" type="search" placeholder="Search history..." aria-label="Search item history">
         </div>
-        <div id="historyList" class="record-list"></div>
+        <div id="historyList" class="record-list">
+          <p class="empty-state">Loading history...</p>
+        </div>
       </section>
 
-      <p class="footer-note">
-        Your history is retained when an item is marked returned.
-      </p>
+      <p class="footer-note">Changes sync to devices signed in to this shared account.</p>
     </section>
   </main>
 
