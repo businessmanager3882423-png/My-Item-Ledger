@@ -15,7 +15,7 @@
     <a class="brand" href="#"><span class="logo">M</span> My Item Ledger</a>
     <div class="tools">
       <span id="syncStatus">Starting...</span>
-      <button id="logoutBtn" class="btn light hidden">Logout</button>
+      <button id="logoutBtn" class="btn light hidden" type="button">Logout</button>
     </div>
   </header>
 
@@ -24,9 +24,33 @@
       <div class="hero">📦</div>
       <h1>Your items, safely tracked.</h1>
       <p>Record what you give, who has it, and when it returns.</p>
-      <button id="loginBtn" class="btn primary full">Continue with Google</button>
-      <p class="muted small">Private access for the assigned Google account.</p>
-      <p id="loginError" class="error"></p>
+
+      <form id="loginForm" class="login-form">
+        <label for="loginEmail">Email address
+          <input id="loginEmail" name="email" type="email"
+            autocomplete="username" maxlength="254"
+            placeholder="Enter your assigned email" required>
+        </label>
+
+        <label for="loginPassword">Password
+          <input id="loginPassword" name="password" type="password"
+            autocomplete="current-password" minlength="6"
+            placeholder="Enter your password" required>
+        </label>
+
+        <button id="loginBtn" class="btn primary full" type="submit">
+          Login
+        </button>
+
+        <button id="resetPasswordBtn" class="link-btn" type="button">
+          Forgot password?
+        </button>
+      </form>
+
+      <p class="muted small">
+        Private access for the assigned email account.
+      </p>
+      <p id="loginError" class="error" aria-live="polite"></p>
     </section>
 
     <section id="appView" class="hidden">
@@ -40,10 +64,22 @@
       </div>
 
       <div class="stats">
-        <article class="stat"><span>Currently Given</span><strong id="activeCount">0</strong></article>
-        <article class="stat"><span>Returned</span><strong id="returnedCount">0</strong></article>
-        <article class="stat"><span>Total Records</span><strong id="totalCount">0</strong></article>
-        <article class="stat"><span>Overdue</span><strong id="overdueCount">0</strong></article>
+        <article class="stat">
+          <span>Currently Given</span>
+          <strong id="activeCount">0</strong>
+        </article>
+        <article class="stat">
+          <span>Returned</span>
+          <strong id="returnedCount">0</strong>
+        </article>
+        <article class="stat">
+          <span>Total Records</span>
+          <strong id="totalCount">0</strong>
+        </article>
+        <article class="stat">
+          <span>Overdue</span>
+          <strong id="overdueCount">0</strong>
+        </article>
       </div>
 
       <section class="panel">
@@ -51,13 +87,16 @@
         <form id="itemForm">
           <div class="form-grid">
             <label>Item name *
-              <input name="itemName" maxlength="100" required placeholder="e.g. Laptop">
+              <input name="itemName" maxlength="100" required
+                placeholder="e.g. Laptop">
             </label>
             <label>Person's name *
-              <input name="personName" maxlength="100" required placeholder="Who received it?">
+              <input name="personName" maxlength="100" required
+                placeholder="Who received it?">
             </label>
             <label>Quantity *
-              <input name="quantity" type="number" min="1" max="99999" value="1" required>
+              <input name="quantity" type="number" min="1" max="99999"
+                value="1" required>
             </label>
             <label>Date given *
               <input name="givenDate" type="date" required>
@@ -66,35 +105,47 @@
               <input name="dueDate" type="date">
             </label>
             <label>Notes
-              <input name="notes" maxlength="500" placeholder="Optional details">
+              <input name="notes" maxlength="500"
+                placeholder="Optional details">
             </label>
           </div>
-          <button id="saveBtn" class="btn primary" type="submit">Save Record</button>
+          <button id="saveBtn" class="btn primary" type="submit">
+            Save Record
+          </button>
           <p id="formMessage" class="small muted" aria-live="polite"></p>
         </form>
       </section>
 
       <section class="panel">
         <div class="section-head">
-          <div><h2>Currently Given</h2><p class="muted small">Items not yet returned</p></div>
-          <input id="activeSearch" class="search" placeholder="Search active items">
+          <div>
+            <h2>Currently Given</h2>
+            <p class="muted small">Items not yet returned</p>
+          </div>
+          <input id="activeSearch" class="search"
+            placeholder="Search active items" aria-label="Search active items">
         </div>
         <div id="activeList" class="record-list"></div>
       </section>
 
       <section class="panel">
         <div class="section-head">
-          <div><h2>Record History</h2><p class="muted small">Returned items remain saved</p></div>
-          <input id="historySearch" class="search" placeholder="Search history">
+          <div>
+            <h2>Record History</h2>
+            <p class="muted small">Returned items remain saved</p>
+          </div>
+          <input id="historySearch" class="search"
+            placeholder="Search history" aria-label="Search history">
         </div>
         <div id="historyList" class="record-list"></div>
       </section>
 
-      <p class="footer-note">Your history is retained when an item is marked returned.</p>
+      <p class="footer-note">
+        Your history is retained when an item is marked returned.
+      </p>
     </section>
   </main>
 
   <script type="module" src="./app.js"></script>
 </body>
 </html>
-
