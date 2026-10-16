@@ -1,1 +1,100 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#12213a">
+  <meta name="description" content="Private item lending and return tracker">
+  <title>My Item Ledger</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="logo">M</span> My Item Ledger</a>
+    <div class="tools">
+      <span id="syncStatus">Starting...</span>
+      <button id="logoutBtn" class="btn light hidden">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="loginView" class="login panel">
+      <div class="hero">📦</div>
+      <h1>Your items, safely tracked.</h1>
+      <p>Record what you give, who has it, and when it returns.</p>
+      <button id="loginBtn" class="btn primary full">Continue with Google</button>
+      <p class="muted small">Private access for the assigned Google account.</p>
+      <p id="loginError" class="error"></p>
+    </section>
+
+    <section id="appView" class="hidden">
+      <div class="welcome">
+        <div>
+          <p class="eyebrow">YOUR PRIVATE WORKSPACE</p>
+          <h1>My Item Ledger</h1>
+          <p class="muted">Every handover. Every return. One history.</p>
+        </div>
+        <span id="connectionLabel" class="pill">Checking connection</span>
+      </div>
+
+      <div class="stats">
+        <article class="stat"><span>Currently Given</span><strong id="activeCount">0</strong></article>
+        <article class="stat"><span>Returned</span><strong id="returnedCount">0</strong></article>
+        <article class="stat"><span>Total Records</span><strong id="totalCount">0</strong></article>
+        <article class="stat"><span>Overdue</span><strong id="overdueCount">0</strong></article>
+      </div>
+
+      <section class="panel">
+        <h2>Add New Record</h2>
+        <form id="itemForm">
+          <div class="form-grid">
+            <label>Item name *
+              <input name="itemName" maxlength="100" required placeholder="e.g. Laptop">
+            </label>
+            <label>Person's name *
+              <input name="personName" maxlength="100" required placeholder="Who received it?">
+            </label>
+            <label>Quantity *
+              <input name="quantity" type="number" min="1" max="99999" value="1" required>
+            </label>
+            <label>Date given *
+              <input name="givenDate" type="date" required>
+            </label>
+            <label>Expected return
+              <input name="dueDate" type="date">
+            </label>
+            <label>Notes
+              <input name="notes" maxlength="500" placeholder="Optional details">
+            </label>
+          </div>
+          <button id="saveBtn" class="btn primary" type="submit">Save Record</button>
+          <p id="formMessage" class="small muted" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div><h2>Currently Given</h2><p class="muted small">Items not yet returned</p></div>
+          <input id="activeSearch" class="search" placeholder="Search active items">
+        </div>
+        <div id="activeList" class="record-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div><h2>Record History</h2><p class="muted small">Returned items remain saved</p></div>
+          <input id="historySearch" class="search" placeholder="Search history">
+        </div>
+        <div id="historyList" class="record-list"></div>
+      </section>
+
+      <p class="footer-note">Your history is retained when an item is marked returned.</p>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
+
