@@ -1,27 +1,26 @@
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  collection,
-  addDoc,
-  doc,
-  updateDoc,
-  onSnapshot
-} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 import {
   getAuth,
   setPersistence,
   browserLocalPersistence,
   signInWithEmailAndPassword,
-  sendPasswordResetEmail,
-  sendEmailVerification,
   onAuthStateChanged,
-  signOut
+  signOut,
+  sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAfBkjqPbuuM7V2A5xoNSHePEMDHKdRPIA",
@@ -32,342 +31,239 @@ const firebaseConfig = {
   appId: "1:1003468030717:web:12dc9372fdbbb4af1bb494"
 };
 
+// Only this shared account is allowed to use the ledger.
 const ALLOWED_EMAIL = "mianusama3882423@gmail.com";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
-const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-});
+const $ = (id) => document.getElementById(id);
 
-const $ = id => document.getElementById(id);
-const form = $("itemForm");
+const loginView = $("loginView");
+const appView = $("appView");
 const loginForm = $("loginForm");
+const loginBtn = $("loginBtn");
+const loginError = $("loginError");
+const logoutBtn = $("logoutBtn");
+const itemForm = $("itemForm");
+const saveBtn = $("saveBtn");
+const formMessage = $("formMessage");
+const syncStatus = $("syncStatus");
+const connectionLabel = $("connectionLabel");
 
-let currentUser = null;
-let records = [];
 let stopListening = null;
+let allRecords = [];
+let currentUser = null;
 let saving = false;
-let returning = new Set();
-let verificationFlow = false;
+let returningIds = new Set();
 
-const pad = n => String(n).padStart(2, "0");
-
-function localDate() {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-form.elements.givenDate.value = localDate();
+$("givenDate").value = localDateString();
 
-function status(message) {
-  $("syncStatus").textContent = message;
+function escapeHTML(value = "") {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[char]);
 }
 
-function connection() {
-  const online = navigator.onLine;
-
-  $("connectionLabel").textContent = online
-    ? "Online · Sync available"
-    : "Offline · Changes queued";
-
-  $("connectionLabel").style.background =
-    online ? "#e1f5ee" : "#fff0d6";
-
-  $("connectionLabel").style.color =
-    online ? "#126a56" : "#875600";
+function showLoginError(message = "") {
+  loginError.textContent = message;
 }
 
-function loginError(message) {
-  $("loginError").textContent = message || "";
+function setSyncStatus(message) {
+  syncStatus.textContent = message;
+  connectionLabel.textContent = message;
 }
 
-function showSignedIn() {
-  $("loginView").classList.add("hidden");
-  $("appView").classList.remove("hidden");
-  $("logoutBtn").classList.remove("hidden");
-  loginError("");
-  connection();
+function friendlyError(error) {
+  const messages = {
+    "auth/invalid-credential": "Incorrect email or password.",
+    "auth/invalid-login-credentials": "Incorrect email or password.",
+    "auth/user-not-found": "No account was found for this email.",
+    "auth/wrong-password": "Incorrect email or password.",
+    "auth/invalid-email": "Please enter a valid email address.",
+    "auth/too-many-requests": "Too many attempts. Please try again later.",
+    "auth/network-request-failed": "Network error. Check your internet connection.",
+    "auth/operation-not-allowed": "Email/Password sign-in is not enabled in Firebase.",
+    "auth/weak-password": "The password does not meet the requirements.",
+    "permission-denied": "Access denied. Check your Firestore security rules.",
+    "unavailable": "The service is temporarily unavailable. Please try again."
+  };
+
+  return messages[error?.code] ||
+    error?.message ||
+    "Something went wrong. Please try again.";
 }
 
-function showSignedOut() {
-  $("loginView").classList.remove("hidden");
-  $("appView").classList.add("hidden");
-  $("logoutBtn").classList.add("hidden");
-
-  currentUser = null;
-  records = [];
-  render();
-  status("Signed out");
+function showSignedInUI(user) {
+  loginView.classList.add("hidden");
+  appView.classList.remove("hidden");
+  logoutBtn.classList.remove("hidden");
+  $("activeList").innerHTML = '<p class="empty-state">Loading records...</p>';
+  $("historyList").innerHTML = '<p class="empty-state">Loading history...</p>';
+  setSyncStatus("Connecting...");
 }
 
-function itemCollection() {
-  return collection(db, "users", currentUser.uid, "items");
+function showSignedOutUI() {
+  loginView.classList.remove("hidden");
+  appView.classList.add("hidden");
+  logoutBtn.classList.add("hidden");
+  allRecords = [];
+  renderRecords();
+  setSyncStatus("Signed out");
 }
 
-// Email/password login with persistent browser session.
-loginForm.addEventListener("submit", async event => {
-  event.preventDefault();
-
-  if (!navigator.onLine) {
-    loginError("Login ke liye internet connection zaroori hai.");
-    return;
+async function startListening() {
+  if (stopListening) {
+    stopListening();
+    stopListening = null;
   }
 
-  const email = $("loginEmail").value.trim().toLowerCase();
-  const password = $("loginPassword").value;
-  const button = $("loginBtn");
-
-  if (email !== ALLOWED_EMAIL) {
-    loginError("Sirf assigned email se login allowed hai.");
-    return;
-  }
-
-  button.disabled = true;
-  button.textContent = "Logging in...";
-  loginError("");
-
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-
-    verificationFlow = true;
-
-    const credential = await signInWithEmailAndPassword(
-      auth,
-      email,
-      password
-    );
-
-    if (credential.user.email?.toLowerCase() !== ALLOWED_EMAIL) {
-      await signOut(auth);
-      loginError("Yeh email authorized nahi hai.");
-      return;
-    }
-
-    if (!credential.user.emailVerified) {
-      try {
-        await sendEmailVerification(credential.user);
-        loginError(
-          "Verification email bhej di gayi hai. Email verify karo, " +
-          "phir dobara login karo."
-        );
-      } catch (verificationError) {
-        console.error(verificationError);
-        loginError(
-          "Email verify nahi hui. Internet aur Firebase settings check karo."
-        );
-      }
-
-      await signOut(auth);
-      return;
-    }
-
-    $("loginPassword").value = "";
-  } catch (error) {
-    console.error("Login error:", error);
-
-    if (
-      error.code === "auth/invalid-credential" ||
-      error.code === "auth/wrong-password" ||
-      error.code === "auth/user-not-found"
-    ) {
-      loginError("Email ya password ghalat hai.");
-    } else if (error.code === "auth/too-many-requests") {
-      loginError("Bohat zyada attempts hue hain. Kuch dair baad try karo.");
-    } else if (error.code === "auth/network-request-failed") {
-      loginError("Internet connection check karo.");
-    } else if (error.code === "auth/operation-not-allowed") {
-      loginError(
-        "Firebase Console mein Email/Password sign-in enable karo."
-      );
-    } else {
-      loginError(error.message || "Login nahi ho saka. Dobara try karo.");
-    }
-  } finally {
-    verificationFlow = false;
-    button.disabled = false;
-    button.textContent = "Login";
-  }
-});
-
-// Password reset email.
-$("resetPasswordBtn").addEventListener("click", async () => {
-  const email = $("loginEmail").value.trim().toLowerCase();
-
-  if (email !== ALLOWED_EMAIL) {
-    loginError("Pehle assigned email address enter karo.");
-    $("loginEmail").focus();
-    return;
-  }
-
-  if (!navigator.onLine) {
-    loginError("Password reset ke liye internet zaroori hai.");
-    return;
-  }
-
-  const button = $("resetPasswordBtn");
-  button.disabled = true;
-  button.textContent = "Sending reset email...";
-
-  try {
-    await sendPasswordResetEmail(auth, email);
-    loginError("Agar account maujood hai, password reset email bhej di gayi hai.");
-  } catch (error) {
-    console.error(error);
-
-    if (error.code === "auth/operation-not-allowed") {
-      loginError("Firebase mein Email/Password sign-in enable karo.");
-    } else {
-      loginError("Reset email nahi bheji ja saki. Email aur settings check karo.");
-    }
-  } finally {
-    button.disabled = false;
-    button.textContent = "Forgot password?";
-  }
-});
-
-// Logout only when the user chooses Logout.
-$("logoutBtn").addEventListener("click", async () => {
-  if (!confirm("Logout karna hai? Pehle pending sync status check kar lo.")) {
-    return;
-  }
-
-  if (stopListening) stopListening();
-  stopListening = null;
-
-  try {
-    await signOut(auth);
-    showSignedOut();
-  } catch (error) {
-    console.error(error);
-    status("Logout failed");
-    alert("Logout nahi ho saka. Dobara try karo.");
-  }
-});
-
-// Restore the saved Firebase session when the app is reopened.
-onAuthStateChanged(auth, async user => {
-  if (stopListening) stopListening();
-  stopListening = null;
-  currentUser = null;
-  records = [];
-
-  if (!user) {
-    showSignedOut();
-    return;
-  }
-
-  const email = user.email?.toLowerCase();
-
-  if (email !== ALLOWED_EMAIL) {
-    await signOut(auth);
-    showSignedOut();
-    loginError("Sirf assigned email se login allowed hai.");
-    return;
-  }
-
-  // During login, the submit handler sends the verification email.
-  if (!user.emailVerified) {
-    if (verificationFlow) return;
-
-    await signOut(auth);
-    showSignedOut();
-    loginError("Apni email verify karo, phir dobara login karo.");
-    return;
-  }
-
-  currentUser = user;
-  showSignedIn();
-  status(navigator.onLine ? "Loading records..." : "Offline · Loading cache");
-  listen();
-});
-
-function listen() {
-  if (!currentUser) return;
+  // Every device uses the same Firebase account and shared collection.
+  const recordsQuery = query(
+    collection(db, "sharedItems"),
+    orderBy("createdAt", "desc")
+  );
 
   stopListening = onSnapshot(
-    itemCollection(),
-    { includeMetadataChanges: true },
-    snapshot => {
-      records = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-        pendingSync: d.metadata.hasPendingWrites
+    recordsQuery,
+    (snapshot) => {
+      allRecords = snapshot.docs.map((record) => ({
+        id: record.id,
+        ...record.data()
       }));
 
-      render();
-
-      const pending = records.some(r => r.pendingSync);
-
-      status(
-        !navigator.onLine
-          ? "Offline · Waiting for internet"
-          : pending
-            ? "Syncing changes..."
-            : snapshot.metadata.fromCache
-              ? "Showing cached records"
-              : "All changes synced"
-      );
-
-      connection();
+      setSyncStatus("Synced");
+      renderRecords();
     },
-    error => {
-      console.error("Firestore error:", error);
-      status("Database error");
-
-      if (error.code === "permission-denied") {
-        $("formMessage").textContent =
-          "Access denied. Firestore Rules, assigned email aur verification check karo.";
-      }
+    (error) => {
+      console.error("Firestore sync error:", error);
+      setSyncStatus("Sync error");
+      $("activeList").innerHTML =
+        `<p class="empty-state">${escapeHTML(friendlyError(error))}</p>`;
+      $("historyList").innerHTML =
+        '<p class="empty-state">History could not be loaded.</p>';
     }
   );
 }
 
-form.addEventListener("submit", async event => {
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showLoginError("");
+
+  const email = $("loginEmail").value.trim().toLowerCase();
+  const password = $("loginPassword").value;
+
+  if (email !== ALLOWED_EMAIL.toLowerCase()) {
+    showLoginError("This email is not authorized for the shared ledger.");
+    return;
+  }
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = "Signing In...";
+
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    const result = await signInWithEmailAndPassword(auth, email, password);
+
+    if (result.user.email?.toLowerCase() !== ALLOWED_EMAIL.toLowerCase()) {
+      await signOut(auth);
+      throw new Error("This account is not authorized for the shared ledger.");
+    }
+  } catch (error) {
+    console.error("Login error:", error);
+    showLoginError(friendlyError(error));
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = "Sign In";
+  }
+});
+
+$("resetPasswordBtn").addEventListener("click", async () => {
+  const email = $("loginEmail").value.trim().toLowerCase();
+
+  if (!email) {
+    showLoginError("Enter your account email first.");
+    $("loginEmail").focus();
+    return;
+  }
+
+  if (email !== ALLOWED_EMAIL.toLowerCase()) {
+    showLoginError("This email is not authorized for the shared ledger.");
+    return;
+  }
+
+  const resetButton = $("resetPasswordBtn");
+  resetButton.disabled = true;
+  resetButton.textContent = "Sending...";
+
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showLoginError("If a matching account exists, a password reset email has been sent.");
+  } catch (error) {
+    showLoginError(friendlyError(error));
+  } finally {
+    resetButton.disabled = false;
+    resetButton.textContent = "Forgot Password?";
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  logoutBtn.disabled = true;
+
+  try {
+    await signOut(auth);
+  } catch (error) {
+    alert(friendlyError(error));
+  } finally {
+    logoutBtn.disabled = false;
+  }
+});
+
+itemForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   if (!currentUser || saving) return;
 
-  const f = new FormData(form);
-  const itemName = String(f.get("itemName") || "").trim();
-  const personName = String(f.get("personName") || "").trim();
-  const quantity = Number(f.get("quantity"));
-  const givenDate = String(f.get("givenDate") || "");
-  const dueDate = String(f.get("dueDate") || "");
-  const notes = String(f.get("notes") || "").trim();
+  const form = new FormData(itemForm);
+  const itemName = String(form.get("itemName") || "").trim();
+  const personName = String(form.get("personName") || "").trim();
+  const quantity = Number(form.get("quantity"));
+  const givenDate = String(form.get("givenDate") || "");
+  const dueDate = String(form.get("dueDate") || "");
+  const notes = String(form.get("notes") || "").trim();
 
-  if (
-    !itemName ||
-    !personName ||
-    !givenDate ||
-    !Number.isInteger(quantity) ||
-    quantity < 1 ||
-    quantity > 99999 ||
-    itemName.length > 100 ||
-    personName.length > 100 ||
-    notes.length > 500
-  ) {
-    $("formMessage").textContent =
-      "Details check karo. Required fields sahi bharo.";
+  if (!itemName || !personName || !givenDate ||
+      !Number.isInteger(quantity) || quantity < 1 || quantity > 99999) {
+    formMessage.textContent = "Please check all required fields.";
+    formMessage.className = "message error";
     return;
   }
 
   if (dueDate && dueDate < givenDate) {
-    $("formMessage").textContent =
-      "Return date, given date se pehle nahi ho sakti.";
+    formMessage.textContent = "The expected return date cannot be before the given date.";
+    formMessage.className = "message error";
     return;
   }
 
   saving = true;
-  $("saveBtn").disabled = true;
-  $("saveBtn").textContent = "Saving...";
-  $("formMessage").textContent = "";
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Saving...";
+  formMessage.textContent = "";
 
   try {
-    await addDoc(itemCollection(), {
+    await addDoc(collection(db, "sharedItems"), {
       itemName,
       personName,
       quantity,
@@ -375,202 +271,186 @@ form.addEventListener("submit", async event => {
       dueDate,
       notes,
       status: "active",
-      createdAt: Date.now(),
-      returnedAt: null
+      returnedAt: null,
+      returnedDate: null,
+      createdAt: serverTimestamp(),
+      createdBy: currentUser.uid
     });
 
-    form.reset();
-    form.elements.quantity.value = "1";
-    form.elements.givenDate.value = localDate();
+    itemForm.reset();
+    $("quantity").value = "1";
+    $("givenDate").value = localDateString();
 
-    $("formMessage").textContent = navigator.onLine
-      ? "Record added. Check sync status for server confirmation."
-      : "Record queued locally. Internet aane par sync hoga.";
+    formMessage.textContent = "Record saved and syncing across devices.";
+    formMessage.className = "message";
   } catch (error) {
-    console.error(error);
-    $("formMessage").textContent =
-      "Save nahi hua. Internet, login aur Firestore Rules check karo.";
+    console.error("Save error:", error);
+    formMessage.textContent = friendlyError(error);
+    formMessage.className = "message error";
   } finally {
     saving = false;
-    $("saveBtn").disabled = false;
-    $("saveBtn").textContent = "Save Record";
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save Record";
   }
 });
 
-async function markReturned(item) {
-  if (!currentUser || item.status !== "active" || returning.has(item.id)) {
-    return;
-  }
+async function markReturned(record) {
+  if (!currentUser || record.status !== "active" ||
+      returningIds.has(record.id)) return;
 
-  if (
-    !confirm(
-      `${item.itemName} (${item.quantity}) ${item.personName} se wapas mil gaya?`
-    )
-  ) {
-    return;
-  }
+  const confirmed = window.confirm(
+    `Mark "${record.itemName}" as returned by ${record.personName}?`
+  );
 
-  returning.add(item.id);
-  render();
+  if (!confirmed) return;
+
+  returningIds.add(record.id);
+  renderRecords();
 
   try {
-    await updateDoc(
-      doc(db, "users", currentUser.uid, "items", item.id),
-      {
-        status: "returned",
-        returnedAt: Date.now(),
-        returnedDate: localDate()
-      }
-    );
+    await updateDoc(doc(db, "sharedItems", record.id), {
+      status: "returned",
+      returnedAt: serverTimestamp(),
+      returnedDate: localDateString()
+    });
   } catch (error) {
-    console.error(error);
-    alert("Return update nahi hua. Connection aur Rules check karo.");
+    console.error("Return update error:", error);
+    alert(friendlyError(error));
   } finally {
-    returning.delete(item.id);
-    render();
+    returningIds.delete(record.id);
+    renderRecords();
   }
 }
 
-function element(tag, className, value) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  node.textContent = value ?? "";
-  return node;
+function recordMatches(record, search) {
+  if (!search) return true;
+
+  const text = [
+    record.itemName,
+    record.personName,
+    record.notes,
+    record.givenDate,
+    record.dueDate,
+    record.returnedDate,
+    record.quantity,
+    record.status
+  ].join(" ").toLowerCase();
+
+  return text.includes(search.toLowerCase());
 }
 
-function matches(item, query) {
-  query = query.trim().toLowerCase();
-
-  return !query || [
-    item.itemName,
-    item.personName,
-    item.notes,
-    item.givenDate,
-    item.dueDate,
-    item.returnedDate
-  ].some(v => String(v || "").toLowerCase().includes(query));
+function isOverdue(record) {
+  return record.status === "active" &&
+    Boolean(record.dueDate) &&
+    record.dueDate < localDateString();
 }
 
-function renderList(targetId, items, active) {
-  const target = $(targetId);
-  target.replaceChildren();
+function formatDate(dateValue) {
+  if (!dateValue) return "Not set";
 
-  if (!items.length) {
-    target.appendChild(
-      element(
-        "div",
-        "empty",
-        active
-          ? "Abhi koi active item nahi."
-          : "Returned history abhi khali hai."
-      )
-    );
-    return;
-  }
+  const parts = String(dateValue).split("-");
+  if (parts.length !== 3) return escapeHTML(dateValue);
 
-  for (const item of items) {
-    const card = element("article", "record");
-    const details = element("div", "record-details", "");
-
-    details.appendChild(
-      element("h3", "", `${item.itemName} × ${item.quantity}`)
-    );
-    details.appendChild(element("p", "", `Kis ko: ${item.personName}`));
-    details.appendChild(element("p", "", `Di gayi: ${item.givenDate}`));
-
-    if (item.dueDate) {
-      details.appendChild(
-        element("p", "", `Expected return: ${item.dueDate}`)
-      );
-    }
-
-    if (item.notes) {
-      details.appendChild(element("p", "", `Notes: ${item.notes}`));
-    }
-
-    if (active && item.dueDate && item.dueDate < localDate()) {
-      details.appendChild(
-        element("p", "error", "Return date guzar chuki hai.")
-      );
-    }
-
-    if (item.pendingSync) {
-      details.appendChild(element("p", "muted small", "Sync pending"));
-    }
-
-    if (!active) {
-      details.appendChild(element("p", "", "Status: Returned"));
-      details.appendChild(
-        element("p", "", `Wapas mili: ${item.returnedDate || "Unknown"}`)
-      );
-    }
-
-    card.appendChild(details);
-
-    if (active) {
-      const button = element(
-        "button",
-        "btn btn-return",
-        returning.has(item.id) ? "Updating..." : "Mark as Returned"
-      );
-
-      button.type = "button";
-      button.disabled = returning.has(item.id);
-      button.addEventListener("click", () => markReturned(item));
-      card.appendChild(button);
-    }
-
-    target.appendChild(card);
-  }
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
-function render() {
-  const active = records
-    .filter(r => r.status === "active")
-    .sort((a, b) =>
-      String(b.givenDate).localeCompare(String(a.givenDate))
-    );
+function renderRecord(record) {
+  const overdue = isOverdue(record);
+  const status = record.status === "returned" ? "Returned" :
+    overdue ? "Overdue" : "Active";
 
-  const returned = records
-    .filter(r => r.status === "returned")
-    .sort((a, b) => (b.returnedAt || 0) - (a.returnedAt || 0));
+  const statusClass = record.status === "returned"
+    ? "returned-pill"
+    : overdue ? "overdue" : "";
 
-  $("activeCount").textContent = active.length;
-  $("returnedCount").textContent = returned.length;
-  $("totalCount").textContent = records.length;
+  const action = record.status === "active"
+    ? `<button class="return-btn" type="button" data-return-id="${escapeHTML(record.id)}" ${returningIds.has(record.id) ? "disabled" : ""}>${returningIds.has(record.id) ? "Updating..." : "Mark Returned"}</button>`
+    : `<span class="status-pill returned-pill">Returned</span>`;
 
-  $("overdueCount").textContent = active.filter(
-    r => r.dueDate && r.dueDate < localDate()
-  ).length;
+  return `
+    <article class="record-card">
+      <div class="record-main">
+        <div class="record-title">${escapeHTML(record.itemName)}</div>
+        <div class="record-meta">
+          <span>Given to: <strong>${escapeHTML(record.personName)}</strong></span>
+          <span>Quantity: <strong>${escapeHTML(record.quantity)}</strong></span>
+          <span>Given: ${escapeHTML(formatDate(record.givenDate))}</span>
+          <span>Due: ${escapeHTML(formatDate(record.dueDate))}</span>
+          ${record.status === "returned" ? `<span>Returned: ${escapeHTML(formatDate(record.returnedDate))}</span>` : ""}
+          <span class="status-pill ${statusClass}">${status}</span>
+        </div>
+        ${record.notes ? `<p class="record-notes">${escapeHTML(record.notes)}</p>` : ""}
+      </div>
+      <div class="record-actions">${action}</div>
+    </article>`;
+}
 
-  renderList(
-    "activeList",
-    active.filter(r => matches(r, $("activeSearch").value)),
-    true
+function renderRecords() {
+  const activeSearch = $("activeSearch").value || "";
+  const historySearch = $("historySearch").value || "";
+
+  const active = allRecords.filter((record) =>
+    record.status === "active" && recordMatches(record, activeSearch)
   );
 
-  renderList(
-    "historyList",
-    returned.filter(r => matches(r, $("historySearch").value)),
-    false
+  const history = allRecords.filter((record) =>
+    record.status === "returned" && recordMatches(record, historySearch)
   );
+
+  const totalActive = allRecords.filter((record) => record.status === "active");
+  const totalReturned = allRecords.filter((record) => record.status === "returned");
+  const overdue = totalActive.filter(isOverdue);
+
+  $("activeCount").textContent = totalActive.length;
+  $("returnedCount").textContent = totalReturned.length;
+  $("totalCount").textContent = allRecords.length;
+  $("overdueCount").textContent = overdue.length;
+
+  $("activeList").innerHTML = active.length
+    ? active.map(renderRecord).join("")
+    : '<p class="empty-state">No active items match your search.</p>';
+
+  $("historyList").innerHTML = history.length
+    ? history.map(renderRecord).join("")
+    : '<p class="empty-state">No returned items match your search.</p>';
 }
 
-$("activeSearch").addEventListener("input", render);
-$("historySearch").addEventListener("input", render);
+$("activeSearch").addEventListener("input", renderRecords);
+$("historySearch").addEventListener("input", renderRecords);
 
-window.addEventListener("online", () => {
-  connection();
-  status("Connection restored · Checking sync...");
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-return-id]");
+  if (!button) return;
+
+  const record = allRecords.find((item) => item.id === button.dataset.returnId);
+  if (record) markReturned(record);
 });
 
-window.addEventListener("offline", () => {
-  connection();
-  status("Offline · Changes queued");
+onAuthStateChanged(auth, async (user) => {
+  if (user && user.email?.toLowerCase() === ALLOWED_EMAIL.toLowerCase()) {
+    currentUser = user;
+    showSignedInUI(user);
+    await startListening();
+  } else {
+    currentUser = null;
+
+    if (stopListening) {
+      stopListening();
+      stopListening = null;
+    }
+
+    if (user) {
+      await signOut(auth);
+    }
+
+    showSignedOutUI();
+  }
 });
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(console.error);
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("Service worker registration failed:", error);
+    });
   });
 }
